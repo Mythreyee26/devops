@@ -1,0 +1,11 @@
+# Python dependencies for the Kubernetes troubleshooting agent.
+# Install into your venv:
+#   ../venv/Scripts/python -m pip install -r requirements.txt
+#
+# These are the direct dependencies; pip pulls in everything else
+# (langchain-core, google-genai, pydantic, httpx, etc.) automatically.
+
+langgraph==1.2.5
+langchain==1.3.9
+langchain-google-genai==4.2.5
+python-dotenv==1.2.2

@@ -1,0 +1,49 @@
+# A Deployment tells Kubernetes: "keep N copies of this container running."
+# If a pod crashes, the Deployment automatically replaces it.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-app
+  labels:
+    app: web-app
+spec:
+  replicas: 1                 # run 1 copy (pod). Bump this to scale out.
+  selector:
+    matchLabels:
+      app: web-app            # this Deployment manages pods with this label
+  template:                   # the "blueprint" for each pod
+    metadata:
+      labels:
+        app: web-app
+    spec:
+      containers:
+        - name: web-app
+          image: demo-web-app:v1
+          # IfNotPresent = use the image already inside minikube; do NOT try to
+          # download it from a registry (it only exists locally).
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          # Probes use our /health endpoint so Kubernetes knows the app's state.
+          readinessProbe:           # "is it ready to receive traffic yet?"
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          livenessProbe:            # "is it still alive? restart it if not."
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          # Resource limits — important on your 7.7 GB laptop so one pod can't
+          # eat all the RAM.
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"

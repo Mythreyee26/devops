@@ -1,0 +1,37 @@
+# A DELIBERATELY BROKEN deployment — this is our troubleshooting target.
+#
+# The bug: it references the image tag "v99-doesnotexist", which we never built.
+# Kubernetes will try to pull it, fail, and the pod will get stuck in
+# ImagePullBackOff — one of the most common real-world Kubernetes failures.
+#
+# This is the problem our agent will diagnose in Phase 4.
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: broken-app
+  labels:
+    app: broken-app
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: broken-app
+  template:
+    metadata:
+      labels:
+        app: broken-app
+    spec:
+      containers:
+        - name: broken-app
+          image: demo-web-app:v99-doesnotexist   # <-- THE BUG: this tag doesn't exist
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "100m"
+            limits:
+              memory: "128Mi"
+              cpu: "250m"

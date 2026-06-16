@@ -1,0 +1,12 @@
+# Python virtual environment (never commit — it's large and machine-specific)
+venv/
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Secrets — if you ever create one for cloud API keys
+.env
+
+# minikube debug logs
+logs.txt

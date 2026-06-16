@@ -1,0 +1,16 @@
+# A Service gives the pods a stable name and IP inside the cluster.
+# Pods come and go (new IP each time); the Service stays put and load-balances
+# traffic to whichever pods match its selector.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: web-app
+spec:
+  selector:
+    app: web-app          # send traffic to pods with this label
+  ports:
+    - port: 80            # the Service listens on port 80...
+      targetPort: 8000    # ...and forwards to the container's port 8000
+  type: ClusterIP         # reachable only inside the cluster (good enough here;
+                          # use `kubectl port-forward` to reach it from your laptop)

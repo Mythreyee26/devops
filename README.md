@@ -1,16 +1,25 @@
 # Kubernetes Troubleshooting Agent
 
-An AI agent that **diagnoses Kubernetes problems in plain English**. Ask it what's
-wrong with your cluster and it inspects pods with read-only `kubectl` tools, then
-explains the root cause and a fix.
-
+An AI agent that **diagnoses _and_ fixes Kubernetes problems in plain English**. Ask it what's wrong with your cluster and it inspects pods with read-only `kubectl` tools, explains the root cause — and, if you approve, applies the fix.
 ```
 You: what is wrong with broken-app?
    > list_pods()
    > describe_pod(pod_name='broken-app-588c94f6cc-cqjtl')
-Agent: broken-app is in ImagePullBackOff. The image "demo-web-app:v99-doesnotexist"
-       doesn't exist, so Kubernetes can't pull it. Fix: correct the image tag.
+   > list_deployment_images()
+   > set_deployment_image(deployment_name='broken-app', container_name='broken-app', image='demo-web-app:v1')
+
+  PROPOSED FIX: Set image of container 'broken-app' in 'broken-app' to 'demo-web-app:v1'
+  Command:      kubectl set image deployment/broken-app broken-app=demo-web-app:v1 -n default
+  Apply this change? [y/N] y
+   > wait_for_deployment(deployment_name='broken-app')
+Agent: Root cause: the image tag "demo-web-app:v99-doesnotexist" doesn't exist
+       (ImagePullBackOff). I set it to the correct image demo-web-app:v1 and the
+       deployment rolled out successfully.
 ```
+
+**Every cluster change is gated:** the agent runs a server-side dry-run, shows you the
+exact `kubectl` command, and only applies it after you type `y`. It can never modify
+the cluster on its own.
 
 Built with **LangGraph** + **Google Gemini** (`gemini-2.5-flash` by default).
 
@@ -30,7 +39,7 @@ devops/
 │   └── broken-deployment.yaml  # intentionally broken (bad image tag)
 ├── agent/                   # the troubleshooting agent
 │   ├── llm.py               #   get_llm() — Google Gemini factory
-│   ├── tools.py             #   5 read-only kubectl tools
+│   ├── tools.py             #   kubectl tools: read-only observers + approval-gated fixers
 │   ├── k8s_agent.py         #   LangGraph agent + terminal chat
 │   └── .env.example         #   copy to .env and add your GOOGLE_API_KEY
 └── venv/                    # Python environment (gitignored)
@@ -110,13 +119,22 @@ cd agent
 
 # Or ask one question and exit
 ../venv/Scripts/python k8s_agent.py "what is wrong with broken-app?"
+
+# Operate on a different namespace (default is "default")
+../venv/Scripts/python k8s_agent.py -n my-namespace "are all pods healthy?"
 ```
 
 Things to ask:
-- `what is wrong with broken-app?`
+- `what is wrong with broken-app?` — diagnose only
 - `are all my pods healthy?`
 - `show me the logs for web-app`
 - `which deployments are not fully available?`
+- `broken-app is failing, diagnose it and fix it` — diagnose **and** propose a fix to approve
+
+When a fix is proposed you'll see a `PROPOSED FIX` line and an `Apply this change? [y/N]`
+prompt. Type `y` to apply, anything else to decline (the agent then just reports the
+diagnosis). To skip the prompt in trusted demos, set `K8S_AGENT_AUTO_APPROVE=1` — use
+with care, as the agent will then apply fixes without asking.
 
 ---
 
@@ -137,13 +155,21 @@ in `agent/llm.py`.
 
 ## How it works
 
-1. **Tools** (`tools.py`) — each is a plain Python function wrapped in `@tool` that runs
-   one read-only `kubectl` command. The docstring tells the model when to use it.
+1. **Tools** (`tools.py`) — each is a plain Python function wrapped in `@tool`. The
+   docstring tells the model when to use it. There are two kinds:
+   - **Read-only observers:** `list_pods`, `describe_pod`, `get_pod_logs`, `get_events`,
+     `list_deployments`, `list_deployment_images` (discover the correct image), and
+     `wait_for_deployment` (block until a rollout is Ready).
+   - **Fixers (change the cluster):** `scale_deployment`, `set_deployment_image`,
+     `restart_deployment`, `delete_pod`.
 2. **The agent** (`k8s_agent.py`) — LangGraph's `create_agent` builds the loop:
-   think → call a tool → read the result → repeat → answer.
+   think → call a tool → read the result → repeat → answer. Its workflow: diagnose with
+   the observers → discover the correct fix → propose it → (you approve) → verify.
 3. **Memory** — `MemorySaver` keeps the conversation so you can ask follow-ups.
-4. **Safety** — every tool is `get`/`describe`/`logs` only. The agent can observe the
-   cluster but can never `delete`/`apply`/`edit` it.
+4. **Safety** — read-only tools can never change anything. Every fixer goes through two
+   gates before it runs: a server-side **`--dry-run`** that validates the change, then an
+   explicit **human `y/N` approval** of the exact `kubectl` command. The model cannot
+   apply a change on its own.
 
 ---
 
